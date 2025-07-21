@@ -1,43 +1,46 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, storage
-import os
-from datetime import timedelta
+import base64
+import requests
+from github import Github  # 需安装 PyGithub
 
-# 初始化 Firebase（需提前配置）
-if not firebase_admin._apps:
-    # 从 Streamlit Secrets 获取 Firebase 密钥
-    firebase_key = st.secrets["firebase"]
-    cred = credentials.Certificate(firebase_key)
-    firebase_admin.initialize_app(cred, {
-        'storageBucket': "your-project-id.appspot.com"  # 替换为你的 Firebase 存储桶名称
-    })
+# GitHub 配置（替换为你的信息）
+GITHUB_TOKEN = st.secrets["github"]["token"]  # 从 Streamlit Secrets 获取
+REPO_NAME = "你的用户名/你的仓库名"  # 例如 "Tom/Video-Repo"
+BRANCH = "main"
 
-# 页面设置
-st.set_page_config(page_title="共享视频平台", page_icon="🎥")
-st.title("🎥 跨设备视频共享")
-st.markdown("用户A上传视频 → 用户B通过链接播放")
+# 初始化 GitHub 客户端
+g = Github(GITHUB_TOKEN)
+repo = g.get_repo(REPO_NAME)
+
+st.title("🎥 GitHub 视频共享平台")
+st.markdown("用户A上传 → 自动保存到GitHub → 用户B直接播放")
 
 # 文件上传
-uploaded_file = st.file_uploader("上传视频 (MP4/AVI/MOV)", type=["mp4", "avi", "mov"])
+uploaded_file = st.file_uploader("选择视频文件（<25MB）", type=["mp4", "mov"])
 
 if uploaded_file:
-    # 显示文件信息
     file_name = uploaded_file.name
-    file_size = f"{uploaded_file.size / (1024 * 1024):.2f} MB"
-    st.success(f"已接收视频: {file_name} ({file_size})")
+    file_content = uploaded_file.read()
 
-    # 上传到 Firebase Storage
-    bucket = storage.bucket()
-    blob = bucket.blob(f"videos/{file_name}")
-    blob.upload_from_string(uploaded_file.read(), content_type=uploaded_file.type)
-    
-    # 生成可公开访问的链接（有效期 1 年）
-    video_url = blob.generate_signed_url(
-        expiration=timedelta(days=365),
-        method='GET'
-    )
-    
-    # 显示播放器和共享链接
-    st.video(video_url)
-    st.markdown(f"**共享链接（永久有效）:**\n\n`{video_url}`")
+    # 检查文件大小（GitHub免费版限制单文件<25MB）
+    if len(file_content) > 25 * 1024 * 1024:
+        st.error("文件需小于25MB（GitHub免费账户限制）")
+    else:
+        # 上传到 GitHub
+        try:
+            repo.create_file(
+                path=f"videos/{file_name}",
+                message=f"Add video: {file_name}",
+                content=file_content,
+                branch=BRANCH
+            )
+            st.success("视频已上传到 GitHub！")
+
+            # 生成直链（用户B可播放）
+            raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/{BRANCH}/videos/{file_name}"
+            st.video(raw_url)
+            st.markdown(f"**共享链接（永久有效）:**\n\n`{raw_url}`")
+            
+        except Exception as e:
+            st.error(f"上传失败: {e}")
+            
