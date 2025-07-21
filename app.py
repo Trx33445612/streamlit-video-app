@@ -1,78 +1,43 @@
 import streamlit as st
-import tempfile
+import firebase_admin
+from firebase_admin import credentials, storage
 import os
+from datetime import timedelta
 
-# 设置页面标题、图标和布局
-st.set_page_config(
-    page_title="视频上传与播放器",
-    page_icon="🎬",
-    layout="wide"
-)
+# 初始化 Firebase（需提前配置）
+if not firebase_admin._apps:
+    # 从 Streamlit Secrets 获取 Firebase 密钥
+    firebase_key = st.secrets["firebase"]
+    cred = credentials.Certificate(firebase_key)
+    firebase_admin.initialize_app(cred, {
+        'storageBucket': "your-project-id.appspot.com"  # 替换为你的 Firebase 存储桶名称
+    })
 
-# 标题和说明
-st.title("🎥 在线视频播放器")
-st.markdown("""
-上传你的视频文件（支持 MP4/MOV/AVI），即可直接在网页播放  
-⚠️ **注意**：视频仅在当前会话有效，刷新页面会丢失
-""")
+# 页面设置
+st.set_page_config(page_title="共享视频平台", page_icon="🎥")
+st.title("🎥 跨设备视频共享")
+st.markdown("用户A上传视频 → 用户B通过链接播放")
 
-# 自定义样式：隐藏 Streamlit 默认菜单和页脚
-hide_st_style = """
-<style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
-</style>
-"""
-st.markdown(hide_st_style, unsafe_allow_html=True)
+# 文件上传
+uploaded_file = st.file_uploader("上传视频 (MP4/AVI/MOV)", type=["mp4", "avi", "mov"])
 
-# 文件上传区域
-uploaded_file = st.file_uploader(
-    label="选择视频文件",
-    type=["mp4", "mov", "avi", "mkv"],
-    accept_multiple_files=False,
-    help="最大支持 200MB 的文件"
-)
-
-# 如果上传了文件
-if uploaded_file is not None:
+if uploaded_file:
     # 显示文件信息
-    file_details = {
-        "文件名": uploaded_file.name,
-        "文件类型": uploaded_file.type,
-        "文件大小": f"{uploaded_file.size / (1024 * 1024): .2f} MB"
-    }
-    st.json(file_details)
+    file_name = uploaded_file.name
+    file_size = f"{uploaded_file.size / (1024 * 1024):.2f} MB"
+    st.success(f"已接收视频: {file_name} ({file_size})")
 
-    # 临时保存文件（仅用于播放）
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
-        tmp_file.write(uploaded_file.getbuffer())
-        tmp_path = tmp_file.name
-
-    # 显示成功消息和播放器
-    st.success("视频上传成功！")
-    st.subheader("播放器")
-
-    # 使用两列布局：左侧播放器，右侧控制选项
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        # 播放视频（使用HTML5 video标签增强兼容性）
-        video_bytes = uploaded_file.read()
-        st.video(video_bytes)
-
-    with col2:
-        st.markdown("**控制选项**")
-        autoplay = st.checkbox("自动播放", value=False)
-        muted = st.checkbox("静音", value=False)
-
-        # 显示下载按钮（可选）
-        st.download_button(
-            label="下载视频",
-            data=video_bytes,
-            file_name=uploaded_file.name,
-            mime=uploaded_file.type
-        )
-
-    # 清理临时文件
-    os.unlink(tmp_path)
+    # 上传到 Firebase Storage
+    bucket = storage.bucket()
+    blob = bucket.blob(f"videos/{file_name}")
+    blob.upload_from_string(uploaded_file.read(), content_type=uploaded_file.type)
+    
+    # 生成可公开访问的链接（有效期 1 年）
+    video_url = blob.generate_signed_url(
+        expiration=timedelta(days=365),
+        method='GET'
+    )
+    
+    # 显示播放器和共享链接
+    st.video(video_url)
+    st.markdown(f"**共享链接（永久有效）:**\n\n`{video_url}`")
