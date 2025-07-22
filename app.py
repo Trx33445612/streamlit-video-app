@@ -10,35 +10,24 @@ st.set_page_config(
     layout="wide"
 )
 
-# 获取当前应用的完整URL（关键改进）
-def get_current_app_url():
-    try:
-        # 如果是Streamlit Cloud部署
-        from streamlit.web.server.server import Server
-        server = Server.get_current()
-        if server:
-            return f"https://{server.config.browserServerAddress}"
-    except:
-        pass
-    # 本地运行时默认URL
-    return "http://localhost:8501"
+# 手动设置云端域名（部署后必须修改！）
+CLOUD_URL = "https://your-app-name.streamlit.app"  # ⚠️请替换为你的实际部署地址
 
-# 创建临时目录存储视频
-if not os.path.exists("temp_videos"):
-    os.makedirs("temp_videos")
-
-# 生成唯一文件名（保持不变）
+# 生成唯一文件名
 def generate_unique_filename(original_filename):
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     hash_object = hashlib.md5(original_filename.encode())
     hash_str = hash_object.hexdigest()[:8]
     return f"{timestamp}_{hash_str}_{original_filename}"
 
-# 主应用
 def main():
     st.title("🎬 免费视频共享平台")
     st.markdown("上传视频并获取链接，其他用户可以在任何设备上观看")
-    
+
+    # 警告本地运行提示
+    if "streamlit.app" not in CLOUD_URL:
+        st.warning("⚠️ 当前为本地测试模式，生成的链接无法跨设备访问。部署后请修改代码中的 `CLOUD_URL`")
+
     # 上传视频
     uploaded_file = st.file_uploader(
         "选择视频文件 (MP4, WebM, OGG)", 
@@ -47,52 +36,39 @@ def main():
     )
     
     if uploaded_file is not None:
-        # 保存上传的视频
+        # 保存文件
         unique_filename = generate_unique_filename(uploaded_file.name)
         temp_filepath = os.path.join("temp_videos", unique_filename)
         
         with open(temp_filepath, "wb") as f:
             f.write(uploaded_file.getbuffer())
         
-        # 显示视频
         st.success("视频上传成功!")
         st.video(temp_filepath)
         
-        # 生成完整的可直接打开的URL（关键改进）
-        app_url = get_current_app_url().rstrip('/')
-        share_url = f"{app_url}/?video={unique_filename}"
+        # 生成云端链接（始终使用预设的CLOUD_URL）
+        share_url = f"{CLOUD_URL}/?video={unique_filename}"
         
-        st.markdown("### 分享链接（复制后可直接在浏览器打开）")
+        st.markdown("### 🌐 跨设备分享链接")
         st.code(share_url, language="text")
         
-        # 复制按钮（提示用户手动复制）
-        if st.button("点击复制链接"):
-            st.experimental_set_query_params(video=unique_filename)
-            st.success(f"已生成链接！请手动复制上方内容到剪贴板")
+        # 简化复制操作
+        st.markdown(f"""
+        <a href="{share_url}" target="_blank"><button style="color: white; background-color: #FF4B4B; border: none; padding: 0.5rem 1rem; border-radius: 0.5rem;">点击测试链接</button></a>
+        <span style="margin-left: 1rem;">或手动复制上方链接</span>
+        """, unsafe_allow_html=True)
 
-    # 从URL参数读取视频
+    # 视频播放逻辑
     query_params = st.experimental_get_query_params()
     if "video" in query_params:
-        video_filename = query_params["video"][0]
-        video_path = os.path.join("temp_videos", video_filename)
-        
+        video_path = os.path.join("temp_videos", query_params["video"][0])
         if os.path.exists(video_path):
-            st.markdown(f"### 正在播放: {video_filename.split('_')[-1]}")  # 显示原始文件名
             st.video(video_path)
         else:
-            st.error("视频不存在或已过期")
+            st.error("视频已过期或不存在")
 
-# 清理旧文件（保持不变）
-def cleanup_old_videos():
-    now = datetime.now()
-    for filename in os.listdir("temp_videos"):
-        filepath = os.path.join("temp_videos", filename)
-        file_time = datetime.fromtimestamp(os.path.getmtime(filepath))
-        if (now - file_time).days > 1:
-            try:
-                os.remove(filepath)
-            except:
-                pass
-
-cleanup_old_videos()
+# 初始化目录和清理
+if not os.path.exists("temp_videos"):
+    os.makedirs("temp_videos")
 main()
+        
