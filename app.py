@@ -1,52 +1,82 @@
 import streamlit as st
-from github import Github  # 需安装 PyGithub
+import os
+from datetime import datetime
+import hashlib
+import shutil
 
-# GitHub 配置（替换为你的信息）
-GITHUB_TOKEN = st.secrets["github"]["token"]
-REPO_NAME = "你的用户名/你的仓库名"
-BRANCH = "main"
+# 配置页面
+st.set_page_config(
+    page_title="视频共享平台",
+    page_icon="🎬",
+    layout="wide"
+)
 
-# 初始化 GitHub 客户端
-g = Github(GITHUB_TOKEN)
-repo = g.get_repo(REPO_NAME)
+# 创建临时目录存储视频
+if not os.path.exists("temp_videos"):
+    os.makedirs("temp_videos")
 
-st.title("🎥 视频共享平台")
-st.markdown("上传视频 → 自动保存到GitHub → 内嵌播放")
+# 生成唯一文件名
+def generate_unique_filename(original_filename):
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    hash_object = hashlib.md5(original_filename.encode())
+    hash_str = hash_object.hexdigest()[:8]
+    return f"{timestamp}_{hash_str}_{original_filename}"
 
-# 文件上传
-uploaded_file = st.file_uploader("选择MP4文件（<25MB）", type=["mp4"])
-
-if uploaded_file:
-    file_name = uploaded_file.name
-    file_content = uploaded_file.read()
-
-    try:
-        # 上传到 GitHub
-        repo.create_file(
-            path=f"videos/{file_name}",
-            message=f"Add video: {file_name}",
-            content=file_content,
-            branch=BRANCH
-        )
+# 主应用
+def main():
+    st.title("🎬 免费视频共享平台")
+    st.markdown("上传视频并获取链接，其他用户可以在任何设备上观看")
+    
+    # 上传视频
+    uploaded_file = st.file_uploader(
+        "选择视频文件 (MP4, WebM, OGG)", 
+        type=["mp4", "webm", "ogg"],
+        accept_multiple_files=False
+    )
+    
+    if uploaded_file is not None:
+        # 保存上传的视频
+        unique_filename = generate_unique_filename(uploaded_file.name)
+        temp_filepath = os.path.join("temp_videos", unique_filename)
         
-        # 生成 Raw URL
-        raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/{BRANCH}/videos/{file_name}"
-        st.success("上传成功！")
+        with open(temp_filepath, "wb") as f:
+            f.write(uploaded_file.getbuffer())
         
-        # ---- 关键播放代码 ----
-        st.subheader("播放器")
-        video_html = f"""
-        <div style="border: 2px solid #eee; border-radius: 5px; padding: 10px;">
-          <video width="100%" controls autoplay muted>
-            <source src="{raw_url}" type="video/mp4">
-          </video>
-        </div>
-        """
-        st.components.v1.html(video_html, height=500)
-        # ---------------------
+        # 显示视频
+        st.success("视频上传成功!")
+        st.video(temp_filepath)
         
-        st.markdown(f"**共享链接：**\n\n`{raw_url}`")
+        # 生成分享链接
+        share_url = f"{st.experimental_get_query_params().get('_g', [''])[0]}/?video={unique_filename}"
+        st.markdown("### 分享链接")
+        st.code(share_url, language="text")
         
-    except Exception as e:
-        st.error(f"上传失败: {e}")
+        # 复制链接按钮
+        if st.button("复制链接到剪贴板"):
+            st.experimental_set_query_params(video=unique_filename)
+            st.success("链接已复制! 发送这个链接给其他人即可观看视频")
+    
+    # 检查URL参数是否有视频
+    query_params = st.experimental_get_query_params()
+    if "video" in query_params:
+        video_filename = query_params["video"][0]
+        video_path = os.path.join("temp_videos", video_filename)
         
+        if os.path.exists(video_path):
+            st.markdown(f"### 正在播放: {video_filename}")
+            st.video(video_path)
+        else:
+            st.error("找不到指定的视频文件")
+
+# 定期清理旧视频
+def cleanup_old_videos():
+    now = datetime.now()
+    for filename in os.listdir("temp_videos"):
+        filepath = os.path.join("temp_videos", filename)
+        file_time = datetime.fromtimestamp(os.path.getmtime(filepath))
+        if (now - file_time).days > 1:  # 保留1天内的文件
+            os.remove(filepath)
+
+# 运行清理和主应用
+cleanup_old_videos()
+main()
