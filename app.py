@@ -1,46 +1,52 @@
 import streamlit as st
-import base64
-import requests
 from github import Github  # 需安装 PyGithub
 
 # GitHub 配置（替换为你的信息）
-GITHUB_TOKEN = st.secrets["github"]["token"]  # 从 Streamlit Secrets 获取
-REPO_NAME = "你的用户名/你的仓库名"  # 例如 "Tom/Video-Repo"
+GITHUB_TOKEN = st.secrets["github"]["token"]
+REPO_NAME = "你的用户名/你的仓库名"
 BRANCH = "main"
 
 # 初始化 GitHub 客户端
 g = Github(GITHUB_TOKEN)
 repo = g.get_repo(REPO_NAME)
 
-st.title("🎥 GitHub 视频共享平台")
-st.markdown("用户A上传 → 自动保存到GitHub → 用户B直接播放")
+st.title("🎥 视频共享平台")
+st.markdown("上传视频 → 自动保存到GitHub → 内嵌播放")
 
 # 文件上传
-uploaded_file = st.file_uploader("选择视频文件（<25MB）", type=["mp4", "mov"])
+uploaded_file = st.file_uploader("选择MP4文件（<25MB）", type=["mp4"])
 
 if uploaded_file:
     file_name = uploaded_file.name
     file_content = uploaded_file.read()
 
-    # 检查文件大小（GitHub免费版限制单文件<25MB）
-    if len(file_content) > 25 * 1024 * 1024:
-        st.error("文件需小于25MB（GitHub免费账户限制）")
-    else:
+    try:
         # 上传到 GitHub
-        try:
-            repo.create_file(
-                path=f"videos/{file_name}",
-                message=f"Add video: {file_name}",
-                content=file_content,
-                branch=BRANCH
-            )
-            st.success("视频已上传到 GitHub！")
-
-            # 生成直链（用户B可播放）
-            raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/{BRANCH}/videos/{file_name}"
-            st.video(raw_url)
-            st.markdown(f"**共享链接（永久有效）:**\n\n`{raw_url}`")
-            
-        except Exception as e:
-            st.error(f"上传失败: {e}")
-            
+        repo.create_file(
+            path=f"videos/{file_name}",
+            message=f"Add video: {file_name}",
+            content=file_content,
+            branch=BRANCH
+        )
+        
+        # 生成 Raw URL
+        raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/{BRANCH}/videos/{file_name}"
+        st.success("上传成功！")
+        
+        # ---- 关键播放代码 ----
+        st.subheader("播放器")
+        video_html = f"""
+        <div style="border: 2px solid #eee; border-radius: 5px; padding: 10px;">
+          <video width="100%" controls autoplay muted>
+            <source src="{raw_url}" type="video/mp4">
+          </video>
+        </div>
+        """
+        st.components.v1.html(video_html, height=500)
+        # ---------------------
+        
+        st.markdown(f"**共享链接：**\n\n`{raw_url}`")
+        
+    except Exception as e:
+        st.error(f"上传失败: {e}")
+        
