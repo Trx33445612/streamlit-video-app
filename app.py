@@ -10,11 +10,24 @@ st.set_page_config(
     layout="wide"
 )
 
+# 获取当前应用的完整URL（关键改进）
+def get_current_app_url():
+    try:
+        # 如果是Streamlit Cloud部署
+        from streamlit.web.server.server import Server
+        server = Server.get_current()
+        if server:
+            return f"https://{server.config.browserServerAddress}"
+    except:
+        pass
+    # 本地运行时默认URL
+    return "http://localhost:8501"
+
 # 创建临时目录存储视频
 if not os.path.exists("temp_videos"):
     os.makedirs("temp_videos")
 
-# 生成唯一文件名
+# 生成唯一文件名（保持不变）
 def generate_unique_filename(original_filename):
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     hash_object = hashlib.md5(original_filename.encode())
@@ -45,42 +58,41 @@ def main():
         st.success("视频上传成功!")
         st.video(temp_filepath)
         
-        # 生成分享链接（使用当前URL）
-        current_url = st.experimental_get_query_params().get('_g', [''])[0]
-        share_url = f"{current_url}/?video={unique_filename}" if current_url else f"?video={unique_filename}"
+        # 生成完整的可直接打开的URL（关键改进）
+        app_url = get_current_app_url().rstrip('/')
+        share_url = f"{app_url}/?video={unique_filename}"
         
-        st.markdown("### 分享链接")
+        st.markdown("### 分享链接（复制后可直接在浏览器打开）")
         st.code(share_url, language="text")
         
-        # 复制链接按钮（不使用pyperclip）
-        if st.button("复制链接到剪贴板"):
+        # 复制按钮（提示用户手动复制）
+        if st.button("点击复制链接"):
             st.experimental_set_query_params(video=unique_filename)
-            st.success("请手动复制上方链接！分享给其他人即可观看视频")
+            st.success(f"已生成链接！请手动复制上方内容到剪贴板")
 
-    # 检查URL参数是否有视频
+    # 从URL参数读取视频
     query_params = st.experimental_get_query_params()
     if "video" in query_params:
         video_filename = query_params["video"][0]
         video_path = os.path.join("temp_videos", video_filename)
         
         if os.path.exists(video_path):
-            st.markdown(f"### 正在播放: {video_filename}")
+            st.markdown(f"### 正在播放: {video_filename.split('_')[-1]}")  # 显示原始文件名
             st.video(video_path)
         else:
-            st.error("找不到指定的视频文件")
+            st.error("视频不存在或已过期")
 
-# 定期清理旧视频
+# 清理旧文件（保持不变）
 def cleanup_old_videos():
     now = datetime.now()
     for filename in os.listdir("temp_videos"):
         filepath = os.path.join("temp_videos", filename)
         file_time = datetime.fromtimestamp(os.path.getmtime(filepath))
-        if (now - file_time).days > 1:  # 保留1天内的文件
+        if (now - file_time).days > 1:
             try:
                 os.remove(filepath)
             except:
                 pass
 
-# 运行清理和主应用
 cleanup_old_videos()
 main()
