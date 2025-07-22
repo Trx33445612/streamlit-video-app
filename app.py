@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 # 手动设置云端域名（部署后必须修改！）
-CLOUD_URL = "https://your-app-name.streamlit.app"  # ⚠️请替换为你的实际部署地址
+CLOUD_URL = "https://app-video-app-eaqca3urpvkh8xbdfgappub.streamlit.app"  # ⚠️请替换为你的实际部署地址
 
 # 生成唯一文件名
 def generate_unique_filename(original_filename):
