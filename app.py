@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from datetime import datetime
 import hashlib
-import shutil
+import pyperclip  # 用于复制到剪贴板
 
 # 配置页面
 st.set_page_config(
@@ -21,6 +21,16 @@ def generate_unique_filename(original_filename):
     hash_object = hashlib.md5(original_filename.encode())
     hash_str = hash_object.hexdigest()[:8]
     return f"{timestamp}_{hash_str}_{original_filename}"
+
+# 获取当前部署的URL
+def get_app_url():
+    try:
+        # 从Streamlit配置获取URL
+        from streamlit.web.server.websocket_handler import _get_app_url_from_config
+        return _get_app_url_from_config()
+    except:
+        # 本地运行时使用默认URL
+        return "http://localhost:8501"
 
 # 主应用
 def main():
@@ -46,16 +56,21 @@ def main():
         st.success("视频上传成功!")
         st.video(temp_filepath)
         
-        # 生成分享链接
-        share_url = f"{st.experimental_get_query_params().get('_g', [''])[0]}/?video={unique_filename}"
+        # 生成正确的分享链接
+        app_url = get_app_url().rstrip('/')
+        share_url = f"{app_url}/?video={unique_filename}"
+        
         st.markdown("### 分享链接")
         st.code(share_url, language="text")
         
         # 复制链接按钮
         if st.button("复制链接到剪贴板"):
-            st.experimental_set_query_params(video=unique_filename)
-            st.success("链接已复制! 发送这个链接给其他人即可观看视频")
-    
+            try:
+                pyperclip.copy(share_url)
+                st.success("链接已复制! 发送这个链接给其他人即可观看视频")
+            except:
+                st.warning("无法自动复制，请手动复制上面的链接")
+
     # 检查URL参数是否有视频
     query_params = st.experimental_get_query_params()
     if "video" in query_params:
@@ -75,7 +90,10 @@ def cleanup_old_videos():
         filepath = os.path.join("temp_videos", filename)
         file_time = datetime.fromtimestamp(os.path.getmtime(filepath))
         if (now - file_time).days > 1:  # 保留1天内的文件
-            os.remove(filepath)
+            try:
+                os.remove(filepath)
+            except:
+                pass
 
 # 运行清理和主应用
 cleanup_old_videos()
